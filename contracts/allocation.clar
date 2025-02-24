@@ -111,3 +111,71 @@
   )
 )
 
+;; STEWARD MANAGEMENT
+;; Function to add a new steward
+(define-public (add-steward (new-steward principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get treasury-admin)) (err u401))
+    (asserts! (is-none (map-get? stewards new-steward)) (err u403))
+    (ok (map-set stewards new-steward true))))
+
+;; Function to remove a steward
+(define-public (remove-steward (steward principal))
+  (begin
+    (asserts! (is-eq tx-sender (var-get treasury-admin)) (err u401))
+    (asserts! (is-some (map-get? stewards steward)) (err u404))
+    (ok (map-delete stewards steward))))
+
+;; MOTION MANAGEMENT
+;; Function to submit a new motion
+(define-public (submit-motion (motion-type (string-ascii 50)) (parameters (list 10 int)))
+  (let 
+    (
+      (motion-id (var-get motion-counter))
+      (type-length (len motion-type))
+    )
+    (asserts! (is-some (map-get? stewards tx-sender)) (err u401))
+    (asserts! (and (> type-length u0) (<= type-length u50)) (err u402))
+    (asserts! (<= (len parameters) u10) (err u403))
+    (asserts! (< motion-id (- (pow u2 u128) u1)) (err u404))
+    (map-set pending-motions
+      { motion-id: motion-id }
+      { motion-type: motion-type, parameters: parameters, signatures: (list tx-sender) })
+    (var-set motion-counter (+ motion-id u1))
+    (ok motion-id)))
+
+;; Function to get motion details
+(define-read-only (get-motion (motion-id uint))
+  (map-get? pending-motions { motion-id: motion-id }))
+
+;; Function to get the current motion counter
+(define-read-only (get-motion-counter)
+  (ok (var-get motion-counter)))
+
+;; ALLOCATION HISTORY TRACKING
+;; Function to record an allocation
+(define-public (record-allocation (beneficiary principal) (amount uint))
+  (let (
+    (current-time (unwrap-panic (get-block-info? time u0)))
+    (existing-record (default-to 
+      { total-allocated: u0, last-allocation-time: u0, allocation-count: u0 }
+      (map-get? allocation-history { beneficiary: beneficiary })))
+  )
+    (begin
+      (asserts! (is-some (map-get? stewards tx-sender)) (err u401))
+      (asserts! (not (is-eq beneficiary tx-sender)) (err u409))
+      (asserts! (not (is-eq beneficiary (var-get treasury-admin))) (err u410))
+      (asserts! (not (is-eq beneficiary 'SP000000000000000000002Q6VF78)) (err u411))
+      (asserts! (<= amount (var-get allocation-cap)) (err u405))
+      
+      (asserts! (is-valid-beneficiary beneficiary) (err u412))
+      
+      (map-set allocation-history
+        { beneficiary: beneficiary }
+        { 
+          total-allocated: (+ (get total-allocated existing-record) amount),
+          last-allocation-time: current-time,
+          allocation-count: (+ (get allocation-count existing-record) u1)
+        })
+      (ok true))))
+
