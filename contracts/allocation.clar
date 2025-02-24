@@ -179,3 +179,60 @@
         })
       (ok true))))
 
+;; Function to get allocation history for a beneficiary
+(define-read-only (get-beneficiary-allocation-history (beneficiary principal))
+  (map-get? allocation-history { beneficiary: beneficiary }))
+
+;; Helper function to validate beneficiary address
+(define-private (is-valid-beneficiary (address principal))
+  (and 
+    (not (is-eq address (var-get treasury-admin)))
+    (not (is-some (map-get? stewards address)))
+    (not (is-eq address 'SP000000000000000000002Q6VF78))
+    (is-standard address)))
+
+;; EMERGENCY CONTROLS
+;; Function to freeze the system
+(define-public (freeze-system)
+  (begin
+    (asserts! (is-eq tx-sender (var-get treasury-admin)) (err u401))
+    (asserts! (not (var-get system-frozen)) (err u406))
+    (var-set system-frozen true)
+    (ok true)))
+
+;; Function to unfreeze the system
+(define-public (unfreeze-system)
+  (begin
+    (asserts! (is-eq tx-sender (var-get treasury-admin)) (err u401))
+    (asserts! (var-get system-frozen) (err u407))
+    (var-set system-frozen false)
+    (ok true)))
+
+;; Read-only function to check system freeze status
+(define-read-only (get-system-status)
+  (ok (var-get system-frozen)))
+
+;; UTILITY FUNCTIONS
+;; Private function to execute a motion
+(define-private (execute-motion (motion-id uint))
+  (let ((motion (unwrap! (map-get? pending-motions { motion-id: motion-id }) (err u404))))
+    (begin
+      (asserts! (not (var-get system-frozen)) (err u408))
+      (map-delete pending-motions { motion-id: motion-id })
+      (ok true))))
+
+;; Read-only function to check if an address is a steward
+(define-read-only (is-steward (address principal))
+  (is-some (map-get? stewards address)))
+
+;; Read-only function to get the required number of signatures
+(define-read-only (get-required-signatures)
+  (ok (var-get required-signatures)))
+
+;; Function to update the required number of signatures
+(define-public (update-required-signatures (new-required uint))
+  (begin
+    (asserts! (is-eq tx-sender (var-get treasury-admin)) (err u401))
+    (asserts! (> new-required u0) (err u403))
+    (var-set required-signatures new-required)
+    (ok true)))
